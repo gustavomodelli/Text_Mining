@@ -1,1 +1,5 @@
-# Text_Mining
+# Text_Minining
+
+
+
+Tools to text mining
