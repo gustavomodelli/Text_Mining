@@ -1,0 +1,322 @@
+library(tidyverse)
+library(recipes)
+library(gridExtra)
+library(qdap) ##words
+library(tm) #Stopwords
+library(wordcloud) 
+
+wine <- read.csv('winemag-data-130k-v2.csv', stringsAsFactors = FALSE, 
+                 na.strings = c(' ', ''))
+str(wine)
+
+##nota
+wine <- wine %>% 
+  mutate(nota = ifelse(points < 86, 'ruim',
+                       ifelse(points < 91, 'mediano', 'bom'))) %>% 
+  mutate(nota = factor(nota, levels = c('ruim','mediano','bom')))
+
+
+##Fatores
+wine$country[is.na(wine$country)] <- 'not report'
+wine$country <- as.factor(wine$country)
+wine$designation[is.na(wine$designation)] <- 'not report'
+wine$designation <- as.factor(wine$designation)
+wine$province[is.na(wine$province)] <- 'not report'
+wine$province <- as.factor(wine$province)
+wine$region_2[is.na(wine$region_2)] <- 'not report'
+wine$region_2 <- as.factor(wine$region_2)
+wine$variety[is.na(wine$variety)] <- 'not report'
+wine$variety <- as.factor(wine$variety)
+wine$taster_name[is.na(wine$taster_name)] <- 'not report'
+wine$taster_name <- as.factor(wine$taster_name)
+
+##Extrair ano de fabricação
+wine$fabric_year <- str_extract(wine$title, '[0-9]+')
+wine$fabric_year <- parse_number(wine$fabric_year)
+
+##Regularizar valores fora da curva
+wine$fabric_year[wine$fabric_year < 1900] <- NA
+wine$fabric_year[wine$fabric_year > 2020] <- NA
+
+##Extrair notas de degustação
+wine$fruity <- str_detect(wine$description, 'fruit|fruity')
+wine$cherry <- str_detect(wine$description, 'cherry')
+wine$chocolate <- str_detect(wine$description, 'chocolate')
+wine$blackberry <- str_detect(wine$description, 'blackberry')
+wine$plum <- str_detect(wine$description, 'plum')
+wine$tannins <- str_detect(wine$description, 'tannins')
+wine$black <- str_detect(wine$description, 'black')
+wine$pepper <- str_detect(wine$description, 'pepper|spice')
+wine$delicious <- str_detect(wine$description, 'delicious')
+wine$sweet <- str_detect(wine$description, 'sweet')
+wine$smoke <- str_detect(wine$description, 'smoke')
+wine$best <- str_detect(wine$description, 'notable|notably|elegant|wellmade|great|structured|delicious')
+wine$best2 <- str_detect(wine$description, 'Impeccable|morelsh|dazzling|incisive|dazzles|exquisitely|superbly|glorious|thrilling|stunner')
+wine$bad <- str_detect(wine$description, 'dilute|watery|bland|pickled|weedy|diluted|burgers|quaffer|raspy|forced')
+wine$acidity <- str_detect(wine$description, 'acidity')
+
+vars <- c('fruity','cherry','chocolate','blackberry','plum','tannins','black','pepper',
+          'delicious','sweet','smoke','best','acidity','best2','bad')
+
+wine <- wine %>% 
+  mutate_at(vars, funs(ifelse(. == TRUE,1,0))) %>% 
+  mutate_at(vars, as.factor)
+
+###Outra forma de Extração
+##Palavras mais frequentes
+term_count <- freq_terms(wine$description, top = 100,
+                         stopwords = tm::stopwords('english'))
+plot(term_count)
+
+wordcloud(words = term_count$WORD, freq = term_count$FREQ,
+          max.words = 200, 
+          colors = brewer.pal(8, 'Dark2'))
+
+bag <- bag_o_words(wine$description)
+
+freq <- word_list(wine$description, grouping.var = c('wine'),
+          stopwords = tm::stopwords('english'))
+
+
+##Termos mais frequentes em cada categoria
+wine.low <- wine %>% 
+  filter(nota == 'ruim')
+
+term_count.low <- freq_terms(wine.low$description, top = 100,
+                             stopwords = tm::stopwords('english'))
+
+wordcloud(words = term_count.low$WORD, freq = term_count.low$FREQ,
+          max.words = 200, 
+          colors = brewer.pal(8, 'Dark2'))
+
+wine.hight <- wine %>% filter(nota == 'bom')
+term_count.h <- freq_terms(wine.hight$description, top = 100,
+                             stopwords = tm::stopwords('english'))
+
+wordcloud(words = term_count.h$WORD, freq = term_count.h$FREQ,
+          max.words = 200, 
+          colors = brewer.pal(8, 'Dark2'))
+
+##Extrair informação do título
+term_count.h2 <- freq_terms(wine.hight$title, top = 100,
+                           stopwords = tm::stopwords('english'))
+
+term_count.low2 <- freq_terms(wine.low$title, top = 100,
+                             stopwords = tm::stopwords('english'))
+
+
+##Sample 
+wine.amostra <- sample_n(wine, size = 1000)
+
+##Word Associate
+word_associate(wine.amostra$description, 
+               match.string = c('nota'),
+               stopwords = c('Top200Words'),
+               network.plot = TRUE
+               )
+
+
+##EDA
+#Distribuição do desfecho
+ggplot(wine, aes(points))+
+  geom_histogram(fill = 'blue')
+
+##Avaliação pelo Preço 
+##Característica mais importante
+ggplot(wine, aes(log(price), points))+
+  geom_point()
+
+##Ano de Fabricação
+ggplot(wine, aes(fabric_year, points))+
+  geom_point()
+
+##Por ano de Fabricação a partir de 1990
+wine.ano <- wine %>% filter(fabric_year > 1990)
+
+ggplot(wine.ano, aes(fabric_year, points))+
+  geom_point()
+##Ano de fabricação não importa na análise
+
+##Por Taster name
+ggplot(wine, aes(reorder(taster_name, points), points, fill = taster_name))+
+  geom_boxplot()+
+  coord_flip()+
+  theme(legend.position = 'none')+
+  labs(title = 'Points by Taster', x = 'Taster Name')
+
+
+#Por região
+ggplot(wine, aes(reorder(region_2, points), points, fill = taster_name))+
+  geom_boxplot()+
+  coord_flip()+
+  theme(legend.position = 'none')
+
+
+##Por pais
+ggplot(wine, aes(reorder(country, points), points, fill = country))+
+  geom_boxplot()+
+  coord_flip()+
+  theme(legend.position = 'none')
+
+  ##Aromas
+  p1 <- ggplot(wine, aes(fruity, points, fill = fruity))+
+    geom_boxplot()
+  
+  p2 <- ggplot(wine, aes(cherry, points, fill = cherry))+
+    geom_boxplot()
+  
+  p3 <- ggplot(wine, aes(chocolate, points, fill = chocolate))+
+    geom_boxplot()
+  
+  p4 <- ggplot(wine, aes(blackberry, points, fill = blackberry))+
+    geom_boxplot()
+  
+  p5 <- ggplot(wine, aes(plum, points, fill = plum))+
+    geom_boxplot()
+  
+  p6 <- ggplot(wine, aes(tannins, points, fill = tannins))+
+    geom_boxplot()
+  
+  p7 <- ggplot(wine, aes(black, points, fill = black))+
+    geom_boxplot()
+  
+  p8 <- ggplot(wine, aes(pepper, points, fill = pepper))+
+    geom_boxplot()
+  
+  p9 <- ggplot(wine, aes(delicious, points, fill = delicious))+
+    geom_boxplot()
+  
+  p10 <- ggplot(wine, aes(sweet, points, fill = sweet))+
+    geom_boxplot()
+  
+  p11 <- ggplot(wine, aes(smoke, points, fill = smoke))+
+    geom_boxplot()
+  
+  grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11)
+
+###Recipe
+rec <- recipe(points ~ country + price +  province + taster_name +
+                variety + fruity + cherry + chocolate + blackberry +
+                plum + tannins + black + pepper + delicious + sweet + smoke +
+                best + best2 + acidity + bad, data = wine) %>% 
+  step_BoxCox(price, - all_outcomes()) %>% 
+  step_medianimpute(all_numeric(), - all_outcomes()) %>% 
+  step_center(price, -all_outcomes()) %>% 
+  step_scale(price, -all_outcomes()) %>% 
+  step_other(all_nominal(), -vars, threshold = 0.01) %>% 
+  step_dummy(all_nominal()) %>% 
+  step_zv(all_predictors())
+
+preparo <- prep(rec, wine)
+wine.new <- bake(preparo, wine)
+str(wine.new)
+
+#A simple LM without regularization
+model_01 <- lm(points ~ . , data = wine.new)
+summary(model_01)
+
+#Test an spline with price
+library(splines)
+model_02 <- lm(points ~ price + bad_X1 + best2_X1, data = wine.new)
+summary(model_02)
+
+####H2o com Regularização de Lasso #########################
+library(h2o)
+
+h2o.init(nthreads = -1)
+
+
+##Impoort Data do H2o File
+wine.h2o <- as.h2o(wine.new, destination_frame = 'wine.h20')
+
+
+##Split
+split <- h2o.splitFrame(wine.h2o, ratios = c(0.70, 0.15))
+wine.train <- split[[1]]
+wine.validation <- split[[2]]
+wine.test <- split[[3]]
+
+##
+x <- setdiff(names(wine.h2o), 'points')
+y <- 'points'
+
+
+wine.glm <- h2o.glm(x = x, y = y, training_frame = wine.train, validation_frame = wine.validation,
+                    family = 'gaussian', model_id = 'wine.glm01', lambda_search = TRUE)
+
+
+h2o.performance(wine.glm, newdata = wine.test)
+h2o.varimp_plot(wine.glm)
+
+
+wine.rf <- h2o.randomForest(x = x, y = y, training_frame = wine.train,
+                            validation_frame = wine.validation,
+                            max_depth = 40, ntrees = 200,
+                            sample_rate = 0.5)
+
+tuned.rf <- h2o.grid(x = x, y = y, training_frame = wine.train,
+                     validation_frame = wine.validation,
+                     max_depth = 40,
+                     algorithm = 'randomForest',
+                     
+                     stopping_metric = 'deviance',
+                     stopping_tolerance = 0,
+                     stopping_rounds = 4,
+                     score_tree_interval = 3,
+                     
+                     search_criteria = list(
+                       strategy = 'RandomDiscrete',
+                       stopping_metric = 'mse',
+                       stopping_tolerance = 0.001,
+                       stopping_rounds = 10,
+                       max_runtime_secs = 120),
+                     hyper_params = list(
+                       ntrees = c(50, 100, 200),
+                       sample_rate = c(0.5, 0.632, 0.8)
+                     )
+                     )
+
+wine.rf
+h2o.performance(wine.rf, newdata = wine.test)
+h2o.varimp_plot(wine.rf)
+
+
+wine.gbm <- h2o.gbm(x = x, y = y, training_frame = wine.train,
+                    validation_frame = wine.validation)
+
+h2o.performance(wine.gbm)
+h2o.varimp_plot(wine.gbm)
+
+
+wine.xgb <- h2o.xgboost(x = x, y = y, training_frame = wine.train,
+                        validation_frame = wine.validation)
+
+wine.deep <- h2o.deeplearning(x = x, y = y, training_frame = wine.train,
+                              validation_frame = wine.validation,
+                              hidden = c(200,200),
+                              activation = 'RectifierWithDropout',
+                              hidden_dropout_ratios = c(0.5, 0.3),
+                              input_dropout_ratio = 0.3,
+                              l1 = 0.0005,
+                              l2 = 0.0005,
+                              stopping_metric = 'RMSE',
+                              stopping_tolerance = 0.001,
+                              stopping_rounds = 4,
+                              epochs = 100)
+
+h2o.performance(wine.deep, newdata = wine.test)
+h2o.varimp_plot(wine.deep)
+
+##Plot predict x Y
+predito <- h2o.predict(wine.deep, newdata = wine.test)
+
+wine.pred <- h2o.cbind(wine.test, predito)
+wine.predR <- as.data.frame(wine.pred)
+
+ggplot(wine.predR, aes(predict, points))+
+  geom_point()+
+  geom_hex()+
+  geom_smooth(method = 'lm')
+
+##finish H2o
+h2o.shutdown()
